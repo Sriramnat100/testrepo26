@@ -103,9 +103,14 @@ export default function LiveInspection() {
     toast.info("Connecting to AI...");
 
     try {
-      // Get ephemeral session
+      // Get ephemeral session from backend
       const sessionData = await getEphemeralToken();
       console.log("Session data:", sessionData);
+      
+      const ephemeralKey = sessionData.client_secret?.value;
+      if (!ephemeralKey) {
+        throw new Error("Failed to get ephemeral key from session");
+      }
       
       // Create peer connection
       const pc = new RTCPeerConnection();
@@ -136,10 +141,7 @@ export default function LiveInspection() {
 
       dc.onopen = () => {
         console.log("Data channel opened");
-        setIsConnected(true);
-        setIsConnecting(false);
         setAiStatus("listening");
-        toast.success("Connected to AI Inspector");
         
         // Configure session for equipment inspection
         const sessionConfig = {
@@ -190,19 +192,28 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Send offer to backend for negotiation
-      const negotiateResponse = await axios.post(
-        `${API_URL}/ai/realtime/negotiate`,
-        offer.sdp,
-        {
-          headers: {
-            "Content-Type": "application/sdp",
-          },
-        }
-      );
+      // Connect directly to OpenAI Realtime API using ephemeral key
+      const model = sessionData.model || "gpt-4o-realtime-preview-2024-12-17";
+      const openaiResponse = await fetch(`https://api.openai.com/v1/realtime?model=${model}`, {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${ephemeralKey}`,
+          "Content-Type": "application/sdp",
+        },
+      });
 
-      const answerSdp = negotiateResponse.data.sdp;
+      if (!openaiResponse.ok) {
+        const errorText = await openaiResponse.text();
+        throw new Error(`OpenAI connection failed: ${openaiResponse.status} - ${errorText}`);
+      }
+
+      const answerSdp = await openaiResponse.text();
       await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+      
+      setIsConnected(true);
+      setIsConnecting(false);
+      toast.success("Connected to AI Inspector");
       console.log("WebRTC connection established");
 
     } catch (error) {
