@@ -540,11 +540,7 @@ Be concise, professional, and helpful. Focus on actionable insights."""
 async def analyze_vision(request: VisionAnalysisRequest):
     """Analyze an image for equipment issues using GPT-4o Vision"""
     try:
-        api_key = os.environ.get('EMERGENT_LLM_KEY')
-        if not api_key:
-            raise HTTPException(status_code=500, detail="LLM API key not configured")
-        
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+        openai_client = get_openai_client()
         
         system_prompt = """You are an expert Caterpillar equipment inspector AI assistant. 
 Analyze the image and identify any issues, defects, or safety concerns.
@@ -571,31 +567,35 @@ Respond in this JSON format:
 If you don't see any clear issues, still provide a brief assessment.
 Be concise but thorough. Focus on actionable findings."""
 
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"vision-{uuid.uuid4()}",
-            system_message=system_prompt
-        ).with_model("openai", "gpt-4o")
-        
-        # Create image content
-        image_content = ImageContent(
-            image_base64=request.image_base64
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Analyze this equipment image for any issues or concerns:"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{request.image_base64}",
+                                "detail": "high"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=1000
         )
         
-        # Create message with image attachment
-        user_message = UserMessage(
-            text="Analyze this equipment image for any issues or concerns:",
-            file_contents=[image_content]
-        )
-        
-        response = await chat.send_message(user_message)
+        response_text = response.choices[0].message.content
         
         # Parse JSON response
         import json
         import re
         
         # Try to extract JSON from response
-        json_match = re.search(r'\{[\s\S]*\}', response)
+        json_match = re.search(r'\{[\s\S]*\}', response_text)
         if json_match:
             try:
                 result = json.loads(json_match.group())
@@ -611,7 +611,7 @@ Be concise but thorough. Focus on actionable findings."""
         
         # Fallback if JSON parsing fails
         return {
-            "analysis": response[:200],
+            "analysis": response_text[:200] if response_text else "Analysis complete",
             "findings": [],
             "severity": "NONE",
             "should_alert": False,
