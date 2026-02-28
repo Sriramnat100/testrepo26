@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { LiveFindingsTimeline } from "@/components/LiveFindingsTimeline";
 import {
   Video,
@@ -13,7 +12,9 @@ import {
   XCircle,
   AlertTriangle,
   Scan,
-  StopCircle,
+  Square,
+  Truck,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -61,6 +62,15 @@ export default function LiveInspection() {
   const [findings, setFindings] = useState([]);
   const [cameraError, setCameraError] = useState(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
+
+  // Update time
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Initialize camera
   useEffect(() => {
@@ -126,15 +136,6 @@ export default function LiveInspection() {
     setIsRecording(!isRecording);
   };
 
-  const toggleMute = () => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = isMuted;
-      });
-    }
-    setIsMuted(!isMuted);
-  };
-
   const capturePhoto = () => {
     toast.success("Photo captured", {
       description: "Image saved to inspection media",
@@ -162,30 +163,20 @@ export default function LiveInspection() {
   };
 
   const quickMark = (result) => {
-    const colors = {
-      PASS: "text-green-600",
-      FAIL: "text-red-600",
-      MONITOR: "text-yellow-600",
-    };
-    toast.success(`Marked as ${result}`, {
-      className: colors[result],
-    });
+    toast.success(`Marked as ${result}`);
   };
 
   const finishInspection = async () => {
     setIsGeneratingReport(true);
     
-    // Stop recording
     if (isRecording) {
       setIsRecording(false);
     }
     
-    // Stop camera
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
     }
 
-    // Simulate report generation
     await new Promise((resolve) => setTimeout(resolve, 3000));
     
     navigate(`/app/inspections/${id}`);
@@ -194,11 +185,11 @@ export default function LiveInspection() {
   // Loading state for report generation
   if (isGeneratingReport) {
     return (
-      <div className="h-[calc(100vh-4rem)] bg-gray-900 flex items-center justify-center" data-testid="generating-report">
+      <div className="h-[calc(100vh-4rem)] bg-slate-900 flex items-center justify-center" data-testid="generating-report">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#F9A825] border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-          <h2 className="text-2xl font-bold text-white mb-2">Generating Report</h2>
-          <p className="text-gray-400">
+          <div className="w-16 h-16 border-4 border-[#F7B500] border-t-transparent rounded-full animate-spin mx-auto mb-6" />
+          <h2 className="text-[22px] font-bold text-white mb-2">Generating Report</h2>
+          <p className="text-slate-400 text-[14px]">
             AI is analyzing findings and creating your inspection report...
           </p>
         </div>
@@ -207,18 +198,19 @@ export default function LiveInspection() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] bg-gray-900 flex flex-col" data-testid="live-inspection-page">
+    <div className="h-[calc(100vh-4rem)] bg-slate-900 flex flex-col" data-testid="live-inspection-page">
       {/* Main Content */}
       <div className="flex-1 flex relative overflow-hidden">
         {/* Video Feed */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative bg-black">
           {cameraError ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
               <div className="text-center p-8">
-                <VideoOff className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                <p className="text-white mb-4">{cameraError}</p>
+                <VideoOff className="w-16 h-16 text-slate-500 mx-auto mb-4" />
+                <p className="text-white mb-4 text-[15px]">{cameraError}</p>
                 <Button
                   variant="outline"
+                  className="border-slate-600 text-white hover:bg-slate-700"
                   onClick={() => window.location.reload()}
                 >
                   Retry
@@ -235,37 +227,58 @@ export default function LiveInspection() {
                 className="w-full h-full object-cover"
                 data-testid="camera-feed"
               />
-              {/* Camera overlay */}
-              <div className="camera-overlay absolute inset-0 pointer-events-none" />
+              {/* Gradient overlays */}
+              <div className="gradient-fade-down absolute inset-x-0 top-0 h-32 pointer-events-none" />
+              <div className="gradient-fade-up absolute inset-x-0 bottom-0 h-48 pointer-events-none" />
             </>
           )}
 
-          {/* Top overlay - Status */}
-          <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none">
-            <div className="flex items-center gap-3">
-              {isRecording && (
-                <div className="flex items-center gap-2 bg-red-600 text-white px-3 py-1.5 rounded-full streaming-indicator">
-                  <span className="w-2 h-2 bg-white rounded-full recording-dot" />
-                  <span className="text-sm font-medium">REC</span>
+          {/* Top overlay - Equipment Info & Status */}
+          <div className="live-overlay-header">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {/* Equipment Badge */}
+                <div className="live-equipment-badge">
+                  <Truck className="w-4 h-4" />
+                  <span>CAT D6 Dozer</span>
+                  <span className="opacity-60">•</span>
+                  <span className="font-mono text-[12px] opacity-80">CAT0D6X67890</span>
                 </div>
-              )}
-              <div className="glass rounded-full px-3 py-1.5 text-sm font-medium text-gray-800">
-                {new Date().toLocaleTimeString()}
+                
+                {/* Recording Badge */}
+                {isRecording && (
+                  <div className="streaming-badge">
+                    <span className="streaming-dot" />
+                    <span>REC</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* Time */}
+                <div className="live-equipment-badge">
+                  <Clock className="w-4 h-4" />
+                  <span className="font-mono">{currentTime}</span>
+                </div>
+                
+                {/* Findings Counter */}
+                {isRecording && findings.length > 0 && (
+                  <div className="live-equipment-badge bg-[#F7B500]/20 border-[#F7B500]/30">
+                    <AlertTriangle className="w-4 h-4 text-[#F7B500]" />
+                    <span className="text-[#F7B500] font-semibold">{findings.length}</span>
+                    <span className="opacity-80">findings</span>
+                  </div>
+                )}
               </div>
             </div>
-            {isRecording && (
-              <div className="glass rounded-full px-3 py-1.5 text-sm text-gray-800">
-                <span className="font-medium">{findings.length}</span> findings detected
-              </div>
-            )}
           </div>
 
           {/* Voice indicator */}
           {isVoiceActive && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div className="w-32 h-32 rounded-full bg-[#F9A825]/20 flex items-center justify-center animate-pulse">
-                <div className="w-24 h-24 rounded-full bg-[#F9A825]/40 flex items-center justify-center">
-                  <Mic className="w-12 h-12 text-[#F9A825]" />
+              <div className="w-32 h-32 rounded-full bg-[#F7B500]/20 flex items-center justify-center animate-pulse">
+                <div className="w-24 h-24 rounded-full bg-[#F7B500]/40 flex items-center justify-center">
+                  <Mic className="w-12 h-12 text-[#F7B500]" />
                 </div>
               </div>
             </div>
@@ -273,53 +286,46 @@ export default function LiveInspection() {
         </div>
 
         {/* Right Rail - Live Findings */}
-        <div className="w-80 xl:w-96 bg-gray-50 border-l border-gray-200 hidden md:block overflow-hidden">
+        <div className="w-80 xl:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 hidden md:block overflow-hidden">
           <LiveFindingsTimeline findings={findings} isRecording={isRecording} />
         </div>
       </div>
 
       {/* Bottom Control Bar */}
-      <div className="bg-gray-900 border-t border-gray-800 p-4">
-        <div className="flex items-center justify-center gap-2 sm:gap-4">
+      <div className="live-control-bar">
+        <div className="flex items-center justify-center gap-3 sm:gap-4">
           {/* Start/Stop Recording */}
-          <Button
-            size="lg"
+          <button
             className={cn(
-              "h-14 w-14 rounded-full",
-              isRecording
-                ? "bg-red-600 hover:bg-red-700"
-                : "bg-[#F9A825] hover:bg-[#F57F17]"
+              "live-control-btn touch-target-lg",
+              isRecording ? "live-control-btn-danger" : "live-control-btn-primary"
             )}
             onClick={toggleRecording}
             data-testid="record-btn"
           >
             {isRecording ? (
-              <StopCircle className="w-6 h-6 text-white" />
+              <Square className="w-6 h-6" fill="currentColor" />
             ) : (
-              <Video className="w-6 h-6 text-gray-900" />
+              <Video className="w-6 h-6" />
             )}
-          </Button>
+          </button>
 
           {/* Capture Photo */}
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-14 w-14 rounded-full border-gray-600 bg-gray-800 hover:bg-gray-700 text-white"
+          <button
+            className="live-control-btn live-control-btn-secondary touch-target-lg"
             onClick={capturePhoto}
             data-testid="capture-photo-btn"
           >
             <Camera className="w-6 h-6" />
-          </Button>
+          </button>
 
           {/* Voice Note */}
-          <Button
-            size="lg"
-            variant="outline"
+          <button
             className={cn(
-              "h-14 w-14 rounded-full border-gray-600",
+              "live-control-btn touch-target-lg",
               isVoiceActive
-                ? "bg-[#F9A825] text-gray-900 border-[#F9A825]"
-                : "bg-gray-800 hover:bg-gray-700 text-white"
+                ? "live-control-btn-primary"
+                : "live-control-btn-secondary"
             )}
             onMouseDown={() => handleVoiceNote(true)}
             onMouseUp={() => handleVoiceNote(false)}
@@ -328,65 +334,56 @@ export default function LiveInspection() {
             onTouchEnd={() => handleVoiceNote(false)}
             data-testid="voice-note-btn"
           >
-            {isMuted ? (
-              <MicOff className="w-6 h-6" />
-            ) : (
-              <Mic className="w-6 h-6" />
-            )}
-          </Button>
+            <Mic className="w-6 h-6" />
+          </button>
 
           {/* Identify Part */}
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-14 w-14 rounded-full border-gray-600 bg-gray-800 hover:bg-gray-700 text-white"
+          <button
+            className="live-control-btn live-control-btn-secondary touch-target-lg"
             onClick={identifyPart}
             data-testid="identify-part-btn"
           >
             <Scan className="w-6 h-6" />
-          </Button>
+          </button>
 
           {/* Divider */}
-          <div className="w-px h-10 bg-gray-700 mx-2 hidden sm:block" />
+          <div className="w-px h-10 bg-slate-700 mx-1 hidden sm:block" />
 
           {/* Quick Mark Buttons */}
           <div className="hidden sm:flex items-center gap-2">
-            <Button
-              size="sm"
-              className="bg-green-600 hover:bg-green-700 text-white rounded-full px-4"
+            <button
+              className="live-quick-mark bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={() => quickMark("PASS")}
               data-testid="mark-pass-btn"
             >
-              <CheckCircle className="w-4 h-4 mr-1" />
+              <CheckCircle className="w-4 h-4" />
               PASS
-            </Button>
-            <Button
-              size="sm"
-              className="bg-red-600 hover:bg-red-700 text-white rounded-full px-4"
+            </button>
+            <button
+              className="live-quick-mark bg-red-600 hover:bg-red-700 text-white"
               onClick={() => quickMark("FAIL")}
               data-testid="mark-fail-btn"
             >
-              <XCircle className="w-4 h-4 mr-1" />
+              <XCircle className="w-4 h-4" />
               FAIL
-            </Button>
-            <Button
-              size="sm"
-              className="bg-yellow-600 hover:bg-yellow-700 text-white rounded-full px-4"
+            </button>
+            <button
+              className="live-quick-mark bg-amber-600 hover:bg-amber-700 text-white"
               onClick={() => quickMark("MONITOR")}
               data-testid="mark-monitor-btn"
             >
-              <AlertTriangle className="w-4 h-4 mr-1" />
+              <AlertTriangle className="w-4 h-4" />
               MONITOR
-            </Button>
+            </button>
           </div>
 
           {/* Divider */}
-          <div className="w-px h-10 bg-gray-700 mx-2 hidden sm:block" />
+          <div className="w-px h-10 bg-slate-700 mx-1 hidden sm:block" />
 
           {/* Finish Inspection */}
           <Button
             size="lg"
-            className="bg-[#F9A825] hover:bg-[#F57F17] text-gray-900 font-semibold rounded-full px-6"
+            className="h-12 bg-[#F7B500] hover:bg-[#E5A800] text-slate-900 font-semibold rounded-full px-6 text-[14px]"
             onClick={finishInspection}
             data-testid="finish-inspection-btn"
           >
