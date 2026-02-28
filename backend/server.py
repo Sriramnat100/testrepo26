@@ -508,6 +508,150 @@ Be concise, professional, and helpful. Focus on actionable insights."""
         else:
             return ChatResponse(response="I can help you with inspection summaries, failure analysis, and equipment recommendations. What would you like to know?")
 
+# AI Vision Analysis - Analyze camera frame for issues
+@api_router.post("/ai/vision/analyze")
+async def analyze_vision(request: VisionAnalysisRequest):
+    """Analyze an image for equipment issues using GPT-4o Vision"""
+    try:
+        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        
+        system_prompt = """You are an expert Caterpillar equipment inspector AI assistant. 
+Analyze the image and identify any issues, defects, or safety concerns.
+
+Look for:
+- Hydraulic leaks (fluid stains, wet areas, drips)
+- Rust and corrosion (orange/brown discoloration, surface pitting)
+- Physical damage (dents, cracks, broken parts)
+- Wear patterns (worn surfaces, thin materials, degradation)
+- Safety hazards (loose parts, missing guards, exposed wiring)
+- Part identification (identify visible components)
+
+Respond in this JSON format:
+{
+    "summary": "Brief 1-2 sentence summary of what you see",
+    "findings": [
+        {"issue": "description", "severity": "HIGH/MEDIUM/LOW", "location": "where on equipment", "recommendation": "what to do"}
+    ],
+    "overall_severity": "HIGH/MEDIUM/LOW/NONE",
+    "should_alert": true/false (true if HIGH severity found),
+    "spoken_response": "A natural spoken sentence to tell the inspector what you found (keep it brief and actionable)"
+}
+
+If you don't see any clear issues, still provide a brief assessment.
+Be concise but thorough. Focus on actionable findings."""
+
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"vision-{uuid.uuid4()}",
+            system_message=system_prompt
+        ).with_model("openai", "gpt-4o")
+        
+        # Create message with image
+        user_message = UserMessage(
+            text="Analyze this equipment image for any issues or concerns:",
+            images=[f"data:image/jpeg;base64,{request.image_base64}"]
+        )
+        
+        response = await chat.send_message(user_message)
+        
+        # Parse JSON response
+        import json
+        import re
+        
+        # Try to extract JSON from response
+        json_match = re.search(r'\{[\s\S]*\}', response)
+        if json_match:
+            try:
+                result = json.loads(json_match.group())
+                return {
+                    "analysis": result.get("summary", "Analysis complete"),
+                    "findings": result.get("findings", []),
+                    "severity": result.get("overall_severity", "NONE"),
+                    "should_alert": result.get("should_alert", False),
+                    "spoken_response": result.get("spoken_response", "I've completed my analysis.")
+                }
+            except json.JSONDecodeError:
+                pass
+        
+        # Fallback if JSON parsing fails
+        return {
+            "analysis": response[:200],
+            "findings": [],
+            "severity": "NONE",
+            "should_alert": False,
+            "spoken_response": "I've analyzed the image but couldn't identify specific issues."
+        }
+        
+    except Exception as e:
+        logger.error(f"Vision analysis error: {str(e)}")
+        return {
+            "analysis": "Unable to analyze image at this time.",
+            "findings": [],
+            "severity": "NONE", 
+            "should_alert": False,
+            "spoken_response": "I'm having trouble analyzing the image right now."
+        }
+
+# Text to Speech - Convert AI response to audio
+@api_router.post("/ai/tts")
+async def text_to_speech(request: TTSRequest):
+    """Convert text to speech using OpenAI TTS"""
+    try:
+        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        
+        from emergentintegrations.llm.openai import OpenAITTS
+        import base64
+        
+        tts = OpenAITTS(api_key=api_key)
+        
+        # Generate speech
+        audio_bytes = await tts.generate_speech(
+            text=request.text,
+            voice=request.voice or "alloy",
+            model="tts-1"
+        )
+        
+        # Return base64 encoded audio
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        
+        return {"audio_base64": audio_base64, "format": "mp3"}
+        
+    except Exception as e:
+        logger.error(f"TTS error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+# Speech to Text - Convert user speech to text
+@api_router.post("/ai/stt")
+async def speech_to_text(request: STTRequest):
+    """Convert speech to text using OpenAI Whisper"""
+    try:
+        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        
+        from emergentintegrations.llm.openai import OpenAISTT
+        import base64
+        
+        stt = OpenAISTT(api_key=api_key)
+        
+        # Decode audio
+        audio_bytes = base64.b64decode(request.audio_base64)
+        
+        # Transcribe
+        transcript = await stt.transcribe(audio_bytes)
+        
+        return {"text": transcript, "success": True}
+        
+    except Exception as e:
+        logger.error(f"STT error: {str(e)}")
+        return {"text": "", "success": False, "error": str(e)}
+
 # AI Vision Analysis Request
 class VisionAnalysisRequest(BaseModel):
     image_base64: str
