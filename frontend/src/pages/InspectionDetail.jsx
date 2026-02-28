@@ -76,9 +76,24 @@ export default function InspectionDetail() {
     }, 2000);
   };
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
-    toast.success("Link copied to clipboard");
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copied to clipboard");
+    } catch (error) {
+      // Fallback for when clipboard API is not available
+      const textArea = document.createElement("textarea");
+      textArea.value = window.location.href;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand("copy");
+        toast.success("Link copied to clipboard");
+      } catch (e) {
+        toast.error("Unable to copy link");
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   const handleChecklistUpdate = async (itemId, newResult) => {
