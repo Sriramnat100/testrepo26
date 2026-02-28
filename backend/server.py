@@ -630,31 +630,18 @@ async def text_to_speech(request: TTSRequest):
         if not api_key:
             raise HTTPException(status_code=500, detail="LLM API key not configured")
         
-        import httpx
-        import base64
+        from emergentintegrations.llm.openai import OpenAITextToSpeech
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.openai.com/v1/audio/speech",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "tts-1",
-                    "input": request.text,
-                    "voice": request.voice or "alloy",
-                    "response_format": "mp3"
-                },
-                timeout=30.0
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"TTS API error: {response.status_code} - {response.text}")
-                raise HTTPException(status_code=500, detail="TTS API error")
-            
-            audio_base64 = base64.b64encode(response.content).decode('utf-8')
-            return {"audio_base64": audio_base64, "format": "mp3"}
+        tts = OpenAITextToSpeech(api_key=api_key)
+        
+        # Generate speech and return as base64
+        audio_base64 = await tts.generate_speech_base64(
+            text=request.text,
+            voice=request.voice or "alloy",
+            model="tts-1"
+        )
+        
+        return {"audio_base64": audio_base64, "format": "mp3"}
         
     except Exception as e:
         logger.error(f"TTS error: {str(e)}")
