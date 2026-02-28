@@ -135,6 +135,125 @@ class CatInspectAPITester:
         
         return success1 and success2
 
+    def test_inspection_dynamic_ids(self):
+        """Test inspection endpoint with dynamic IDs (bug fix verification)"""
+        # Test with various dynamic IDs to verify the bug fix
+        test_ids = ["insp-002", "insp-001", "random-id-123", "new-inspection-456"]
+        
+        all_success = True
+        for test_id in test_ids:
+            success, response = self.run_test(f"Get Inspection {test_id}", "GET", f"inspections/{test_id}", 200)
+            if success and response:
+                # Verify response has required fields
+                required_fields = ["id", "equipment_model", "status", "date", "inspector"]
+                missing_fields = [field for field in required_fields if field not in response]
+                if missing_fields:
+                    print(f"   ⚠️  Missing fields: {missing_fields}")
+                    all_success = False
+                else:
+                    print(f"   ✅ Response contains all required fields")
+            else:
+                all_success = False
+        
+        return all_success
+
+    def test_ai_tts_endpoint(self):
+        """Test Text-to-Speech AI endpoint"""
+        tts_data = {
+            "text": "This is a test of the text to speech functionality",
+            "voice": "alloy"
+        }
+        success, response = self.run_test("AI Text-to-Speech", "POST", "ai/tts", 200, data=tts_data)
+        
+        if success and response:
+            # Verify response has audio_base64 field
+            if "audio_base64" in response and response["audio_base64"]:
+                print(f"   ✅ TTS returned audio data (length: {len(response['audio_base64'])} chars)")
+                return True
+            else:
+                print(f"   ❌ TTS response missing audio_base64 field")
+                return False
+        return success
+
+    def test_ai_vision_endpoint(self):
+        """Test AI Vision Analysis endpoint"""
+        # Create a simple base64 test image (1x1 pixel PNG)
+        test_image_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+        
+        vision_data = {
+            "image_base64": test_image_b64,
+            "context": "equipment inspection test"
+        }
+        success, response = self.run_test("AI Vision Analysis", "POST", "ai/vision/analyze", 200, data=vision_data)
+        
+        if success and response:
+            # Verify response has required fields
+            required_fields = ["analysis", "findings", "severity", "should_alert"]
+            missing_fields = [field for field in required_fields if field not in response]
+            if missing_fields:
+                print(f"   ⚠️  Missing fields: {missing_fields}")
+                return False
+            else:
+                print(f"   ✅ Vision analysis response contains all required fields")
+                return True
+        return success
+
+    def test_media_storage_endpoint(self):
+        """Test media storage endpoint"""
+        # Test with a sample inspection ID
+        inspection_id = "insp-002"
+        
+        # Create test media data
+        test_image_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+        
+        media_data = {
+            "inspection_id": inspection_id,
+            "media_type": "photo",
+            "data_base64": test_image_b64,
+            "caption": "Test photo capture",
+            "timestamp": "10:30:00"
+        }
+        
+        success, response = self.run_test("Store Media", "POST", f"inspections/{inspection_id}/media", 200, data=media_data)
+        
+        if success and response:
+            # Verify response indicates success
+            if response.get("success") and response.get("media_id"):
+                print(f"   ✅ Media stored with ID: {response['media_id']}")
+                
+                # Test retrieving the media list
+                success2, media_list = self.run_test("Get Media List", "GET", f"inspections/{inspection_id}/media", 200)
+                if success2 and isinstance(media_list, list) and len(media_list) > 0:
+                    print(f"   ✅ Media list retrieved ({len(media_list)} items)")
+                    return True
+                else:
+                    print(f"   ❌ Failed to retrieve media list")
+                    return False
+            else:
+                print(f"   ❌ Media storage response missing success/media_id")
+                return False
+        return success
+
+    def test_ai_stt_endpoint(self):
+        """Test Speech-to-Text AI endpoint (optional)"""
+        # Create a minimal audio file in base64 (this is just a test, won't produce real transcription)
+        test_audio_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
+        
+        stt_data = {
+            "audio_base64": test_audio_b64
+        }
+        success, response = self.run_test("AI Speech-to-Text", "POST", "ai/stt", 200, data=stt_data)
+        
+        if success and response:
+            # Check if response has expected structure
+            if "text" in response and "success" in response:
+                print(f"   ✅ STT endpoint responded correctly")
+                return True
+            else:
+                print(f"   ⚠️  STT response missing expected fields")
+                return False
+        return success
+
 def main():
     print("🚀 Starting Cat Inspect AI Backend API Tests")
     print("=" * 60)
