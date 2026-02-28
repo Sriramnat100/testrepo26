@@ -633,20 +633,19 @@ Be concise but thorough. Focus on actionable findings."""
 async def text_to_speech(request: TTSRequest):
     """Convert text to speech using OpenAI TTS"""
     try:
-        api_key = os.environ.get('EMERGENT_LLM_KEY')
-        if not api_key:
-            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        import base64
         
-        from emergentintegrations.llm.openai import OpenAITextToSpeech
+        openai_client = get_openai_client()
         
-        tts = OpenAITextToSpeech(api_key=api_key)
-        
-        # Generate speech and return as base64
-        audio_base64 = await tts.generate_speech_base64(
-            text=request.text,
+        response = await openai_client.audio.speech.create(
+            model="tts-1",
             voice=request.voice or "alloy",
-            model="tts-1"
+            input=request.text
         )
+        
+        # Get audio bytes and convert to base64
+        audio_bytes = response.content
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
         
         return {"audio_base64": audio_base64, "format": "mp3"}
         
@@ -659,16 +658,11 @@ async def text_to_speech(request: TTSRequest):
 async def speech_to_text(request: STTRequest):
     """Convert speech to text using OpenAI Whisper"""
     try:
-        api_key = os.environ.get('EMERGENT_LLM_KEY')
-        if not api_key:
-            raise HTTPException(status_code=500, detail="LLM API key not configured")
-        
-        from emergentintegrations.llm.openai import OpenAISpeechToText
         import base64
         import tempfile
         import os as os_module
         
-        stt = OpenAISpeechToText(api_key=api_key)
+        openai_client = get_openai_client()
         
         # Decode audio and save to temp file
         audio_bytes = base64.b64decode(request.audio_base64)
@@ -678,14 +672,22 @@ async def speech_to_text(request: STTRequest):
             temp_path = temp_file.name
         
         try:
-            # Transcribe
-            result = await stt.transcribe(temp_path, response_format="text")
-            transcript = str(result) if result else ""
-            return {"text": transcript, "success": True}
+            # Transcribe using OpenAI Whisper
+            with open(temp_path, 'rb') as audio_file:
+                response = await openai_client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file
+                )
+            
+            return {"text": response.text, "success": True}
         finally:
             # Clean up temp file
             if os_module.path.exists(temp_path):
                 os_module.remove(temp_path)
+        
+    except Exception as e:
+        logger.error(f"STT error: {str(e)}")
+        return {"text": "", "success": False, "error": str(e)}
         
     except Exception as e:
         logger.error(f"STT error: {str(e)}")
