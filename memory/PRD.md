@@ -17,7 +17,7 @@ Build a production-quality web app UI called "Cat Inspect AI", an AI-powered ins
 5. Status badges: PASS, FAIL, MONITOR, Draft, In Progress, Submitted
 6. OpenAI-powered chatbot for inspection data analysis
 
-## What's Been Implemented (Jan 28, 2026)
+## What's Been Implemented (Feb 28, 2026)
 
 ### Backend (FastAPI)
 - ✅ REST API with /api prefix
@@ -27,7 +27,14 @@ Build a production-quality web app UI called "Cat Inspect AI", an AI-powered ins
 - ✅ PUT /api/inspections/{id}/checklist/{item_id} - Update checklist item
 - ✅ POST /api/inspections/{id}/finish - Finish inspection
 - ✅ GET /api/analytics - Get analytics data
-- ✅ POST /api/chat - AI chatbot endpoint (OpenAI GPT-5.2)
+- ✅ POST /api/chat - AI chatbot endpoint (OpenAI GPT-4o)
+- ✅ POST /api/ai/vision/analyze - Vision analysis endpoint
+- ✅ POST /api/ai/tts - Text-to-speech endpoint
+- ✅ POST /api/ai/stt - Speech-to-text endpoint
+- ✅ POST /api/ai/realtime/session - OpenAI Realtime API session creation
+- ✅ POST /api/ai/realtime/negotiate - WebRTC SDP negotiation
+- ✅ POST /api/inspections/{id}/media - Upload media (photo/video)
+- ✅ GET /api/inspections/{id}/media - Get inspection media
 - ✅ Mock data for inspections and analytics
 
 ### Frontend (React + Tailwind + Shadcn UI)
@@ -41,10 +48,12 @@ Build a production-quality web app UI called "Cat Inspect AI", an AI-powered ins
   - Summary card with live updates
 - ✅ Live Inspection (/app/inspections/:id/live)
   - WebRTC camera integration
+  - **OpenAI Realtime API integration for real-time voice conversation**
+  - AI status indicators (listening, thinking, speaking)
   - Live Findings timeline
-  - Control bar (Record, Capture, Voice, Identify Part)
+  - Control bar (Connect AI, Mic, Record, Capture, Audio)
   - Quick mark buttons (PASS/FAIL/MONITOR)
-  - Simulated AI findings detection
+  - Photo capture and storage
 - ✅ Inspection Detail (/app/inspections/:id)
   - 5 tabs: Summary, Checklist, Media, Parts, Connect
   - Editable checklist items
@@ -60,39 +69,49 @@ Build a production-quality web app UI called "Cat Inspect AI", an AI-powered ins
 
 ## Prioritized Backlog
 
-### P0 - Critical (MVP Complete)
+### P0 - Critical (Completed)
 - ✅ All routes functional
 - ✅ Inspections CRUD
 - ✅ AI chatbot integration
 - ✅ Live inspection with camera
+- ✅ OpenAI Realtime API for real-time voice + vision
 
 ### P1 - High Priority (Next Phase)
+- [ ] Implement video recording and storage (photos working, videos pending)
 - [ ] User authentication (currently skipped per user request)
 - [ ] Persist inspection data to MongoDB
-- [ ] Real AI-powered image analysis for findings detection
-- [ ] Voice note transcription with Whisper
 
 ### P2 - Medium Priority
 - [ ] Export to PDF functionality
 - [ ] Offline support for field use
 - [ ] Push notifications for safety alerts
 - [ ] Multi-language support
+- [ ] AI confidence threshold settings
 
 ### P3 - Nice to Have
 - [ ] Custom inspection templates
 - [ ] Fleet management integration
 - [ ] Predictive maintenance analytics
 - [ ] Mobile app (React Native)
+- [ ] Pre-fill equipment data for repeat inspections
 
 ## Technical Stack
 - Frontend: React 19, Tailwind CSS, Shadcn UI, Recharts
 - Backend: FastAPI, Python 3.x
 - Database: MongoDB (mock data currently)
-- AI: OpenAI GPT-5.2 via Emergent LLM Key
+- AI: OpenAI GPT-4o Realtime via WebRTC (emergentintegrations library)
 - Camera: WebRTC (navigator.mediaDevices)
 
+## OpenAI Realtime API Integration
+The live inspection page now uses OpenAI's Realtime API for low-latency voice conversation:
+1. Backend creates ephemeral session via `/api/ai/realtime/session`
+2. Frontend receives ephemeral key (ek_*) 
+3. Frontend establishes WebRTC connection directly to OpenAI
+4. Bidirectional audio streaming for real-time conversation
+5. AI responds via voice with equipment inspection guidance
+
 ## Next Tasks
-1. Add real MongoDB persistence for inspections
-2. Implement actual AI image analysis for live findings
+1. Implement video recording and storage
+2. Add real MongoDB persistence for inspections
 3. Add authentication if needed
 4. Export reports to PDF
