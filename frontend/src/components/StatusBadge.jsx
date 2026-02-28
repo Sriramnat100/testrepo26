@@ -2,51 +2,46 @@ import { cn } from "@/lib/utils";
 
 const statusConfig = {
   PASS: {
-    bg: "bg-green-100",
-    text: "text-green-800",
-    border: "border-green-200",
+    className: "badge-pass",
+    dot: "bg-emerald-500",
   },
   FAIL: {
-    bg: "bg-red-100",
-    text: "text-red-800",
-    border: "border-red-200",
+    className: "badge-fail",
+    dot: "bg-red-500",
   },
   MONITOR: {
-    bg: "bg-yellow-100",
-    text: "text-yellow-800",
-    border: "border-yellow-200",
+    className: "badge-monitor",
+    dot: "bg-amber-500",
   },
   Draft: {
-    bg: "bg-gray-100",
-    text: "text-gray-800",
-    border: "border-gray-200",
+    className: "badge-draft",
+    dot: "bg-slate-400",
   },
   "In Progress": {
-    bg: "bg-blue-100",
-    text: "text-blue-800",
-    border: "border-blue-200",
+    className: "badge-progress",
+    dot: "bg-blue-500",
   },
   Submitted: {
-    bg: "bg-purple-100",
-    text: "text-purple-800",
-    border: "border-purple-200",
+    className: "badge-submitted",
+    dot: "bg-violet-500",
   },
 };
 
-export const StatusBadge = ({ status, className }) => {
+export const StatusBadge = ({ status, className, showDot = false }) => {
   const config = statusConfig[status] || statusConfig.Draft;
 
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border status-badge",
-        config.bg,
-        config.text,
-        config.border,
+        "badge-status",
+        config.className,
         className
       )}
       data-testid={`status-badge-${status?.toLowerCase().replace(/\s+/g, '-')}`}
     >
+      {showDot && (
+        <span className={cn("w-1.5 h-1.5 rounded-full mr-1.5", config.dot)} />
+      )}
       {status}
     </span>
   );
@@ -54,22 +49,19 @@ export const StatusBadge = ({ status, className }) => {
 
 const severityConfig = {
   HIGH: {
-    bg: "bg-red-100",
-    text: "text-red-800",
-    border: "border-red-200",
+    className: "badge-severity-high",
     dot: "bg-red-500",
+    icon: "text-red-500",
   },
   MEDIUM: {
-    bg: "bg-yellow-100",
-    text: "text-yellow-800",
-    border: "border-yellow-200",
-    dot: "bg-yellow-500",
+    className: "badge-severity-medium",
+    dot: "bg-amber-500",
+    icon: "text-amber-500",
   },
   LOW: {
-    bg: "bg-green-100",
-    text: "text-green-800",
-    border: "border-green-200",
-    dot: "bg-green-500",
+    className: "badge-severity-low",
+    dot: "bg-emerald-500",
+    icon: "text-emerald-500",
   },
 };
 
@@ -79,10 +71,8 @@ export const SeverityBadge = ({ severity, className }) => {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border",
-        config.bg,
-        config.text,
-        config.border,
+        "badge-severity",
+        config.className,
         className
       )}
       data-testid={`severity-badge-${severity?.toLowerCase()}`}
