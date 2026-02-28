@@ -296,10 +296,25 @@ export default function LiveInspection() {
     setIsRecording(!isRecording);
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     const imageBase64 = captureFrame();
     if (imageBase64) {
       toast.success("Photo captured");
+      
+      // Save to backend
+      try {
+        await axios.post(`${API_URL}/inspections/${id}/media`, {
+          inspection_id: id,
+          media_type: "photo",
+          data_base64: imageBase64,
+          caption: "Captured during inspection",
+          timestamp: new Date().toLocaleTimeString()
+        });
+        toast.success("Photo saved to inspection");
+      } catch (error) {
+        console.error("Failed to save photo:", error);
+      }
+      
       // Analyze the captured photo
       if (aiEnabled) {
         analyzeFrame();
