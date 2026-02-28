@@ -514,6 +514,13 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
 
   // Disconnect from Realtime API
   const disconnectRealtime = () => {
+    // Stop vision analysis
+    if (visionIntervalRef.current) {
+      clearInterval(visionIntervalRef.current);
+      visionIntervalRef.current = null;
+    }
+    setVisionEnabled(false);
+    
     if (dataChannelRef.current) {
       dataChannelRef.current.close();
       dataChannelRef.current = null;
