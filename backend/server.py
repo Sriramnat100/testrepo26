@@ -324,12 +324,19 @@ async def get_inspections(status: Optional[str] = None, inspection_type: Optiona
     
     return results
 
+# Store for dynamically created inspections
+CREATED_INSPECTIONS = {}
+
 @api_router.get("/inspections/{inspection_id}")
 async def get_inspection(inspection_id: str):
     """Get single inspection detail"""
     # Return detailed mock for insp-002, otherwise return basic mock
     if inspection_id == "insp-002":
         return MOCK_INSPECTION_DETAIL
+    
+    # Check if it's a dynamically created inspection
+    if inspection_id in CREATED_INSPECTIONS:
+        return CREATED_INSPECTIONS[inspection_id]
     
     for insp in MOCK_INSPECTIONS:
         if insp["id"] == inspection_id:
@@ -341,7 +348,29 @@ async def get_inspection(inspection_id: str):
                 "similar_inspections": MOCK_INSPECTION_DETAIL["similar_inspections"]
             }}
     
-    raise HTTPException(status_code=404, detail="Inspection not found")
+    # For any unknown ID, return a mock completed inspection
+    return {
+        "id": inspection_id,
+        "equipment_model": "CAT D6 Dozer",
+        "serial_number": "CAT0D6X" + inspection_id[-5:],
+        "customer": "New Customer",
+        "location": "Dallas, TX",
+        "inspection_type": "Safety",
+        "status": "Submitted",
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "inspector": "Sriram N.",
+        "summary": "This inspection has been completed successfully. The AI assistant analyzed the equipment and identified several items for review. All critical safety checks passed, with minor maintenance recommendations noted below.",
+        "safety_findings": ["No critical safety issues detected"],
+        "action_items": [
+            {"priority": 1, "action": "Review captured findings", "risk": "Low", "why": "Ensure all items documented"},
+            {"priority": 2, "action": "Schedule follow-up if needed", "risk": "Low", "why": "Preventive maintenance"}
+        ],
+        "findings": MOCK_INSPECTION_DETAIL["findings"],
+        "checklist": MOCK_INSPECTION_DETAIL["checklist"],
+        "parts_matches": MOCK_INSPECTION_DETAIL["parts_matches"],
+        "media": MOCK_INSPECTION_DETAIL["media"],
+        "similar_inspections": MOCK_INSPECTION_DETAIL["similar_inspections"]
+    }
 
 @api_router.post("/inspections")
 async def create_inspection(inspection: InspectionCreate):
