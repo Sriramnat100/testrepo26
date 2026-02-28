@@ -777,6 +777,10 @@ async def get_media_item(inspection_id: str, media_id: str):
 # Include the router in the main app
 app.include_router(api_router)
 
+# Include the realtime router under /api/ai
+if realtime_chat:
+    app.include_router(realtime_router, prefix="/api/ai")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
