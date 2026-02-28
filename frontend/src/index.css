@@ -745,7 +745,11 @@
 
 /* Loading spinner - CAT Yellow */
 .spinner-cat {
-  @apply w-8 h-8 border-3 border-slate-200 border-t-[#F7B500] rounded-full;
+  @apply w-8 h-8 rounded-full;
+  border-width: 3px;
+  border-style: solid;
+  border-color: #e2e8f0;
+  border-top-color: #F7B500;
   animation: spin 0.8s linear infinite;
 }
 
