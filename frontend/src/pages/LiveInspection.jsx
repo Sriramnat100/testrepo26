@@ -88,7 +88,7 @@ export default function LiveInspection() {
   const getEphemeralToken = async () => {
     try {
       const response = await axios.post(`${API_URL}/ai/realtime/session`);
-      return response.data.client_secret;
+      return response.data;
     } catch (error) {
       console.error("Failed to get ephemeral token:", error);
       throw error;
@@ -103,8 +103,9 @@ export default function LiveInspection() {
     toast.info("Connecting to AI...");
 
     try {
-      // Get ephemeral token
-      const ephemeralToken = await getEphemeralToken();
+      // Get ephemeral session
+      const sessionData = await getEphemeralToken();
+      console.log("Session data:", sessionData);
       
       // Create peer connection
       const pc = new RTCPeerConnection();
@@ -116,6 +117,7 @@ export default function LiveInspection() {
       audioElementRef.current = audioEl;
       
       pc.ontrack = (e) => {
+        console.log("Received audio track from AI");
         audioEl.srcObject = e.streams[0];
       };
 
@@ -124,6 +126,7 @@ export default function LiveInspection() {
         const audioTrack = streamRef.current.getAudioTracks()[0];
         if (audioTrack) {
           pc.addTrack(audioTrack, streamRef.current);
+          console.log("Added local audio track");
         }
       }
 
@@ -133,11 +136,15 @@ export default function LiveInspection() {
 
       dc.onopen = () => {
         console.log("Data channel opened");
+        setIsConnected(true);
+        setIsConnecting(false);
+        setAiStatus("listening");
+        toast.success("Connected to AI Inspector");
+        
         // Configure session for equipment inspection
         const sessionConfig = {
           type: "session.update",
           session: {
-            type: "realtime",
             instructions: `You are an expert Caterpillar equipment inspector AI assistant conducting a live inspection. 
             
 Your job is to:
@@ -172,38 +179,37 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
 
       dc.onerror = (e) => {
         console.error("Data channel error:", e);
+        toast.error("Data channel error");
+      };
+
+      dc.onclose = () => {
+        console.log("Data channel closed");
       };
 
       // Create and set local description
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Connect to OpenAI Realtime API
-      const baseUrl = "https://api.openai.com/v1/realtime/calls";
-      const sdpResponse = await fetch(baseUrl, {
-        method: "POST",
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${ephemeralToken}`,
-          "Content-Type": "application/sdp",
-        },
-      });
+      // Send offer to backend for negotiation
+      const negotiateResponse = await axios.post(
+        `${API_URL}/ai/realtime/negotiate`,
+        offer.sdp,
+        {
+          headers: {
+            "Content-Type": "application/sdp",
+          },
+        }
+      );
 
-      if (!sdpResponse.ok) {
-        throw new Error(`Failed to connect: ${sdpResponse.status}`);
-      }
-
-      const answerSdp = await sdpResponse.text();
+      const answerSdp = negotiateResponse.data.sdp;
       await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
-
-      setIsConnected(true);
-      setIsConnecting(false);
-      toast.success("Connected to AI Inspector");
+      console.log("WebRTC connection established");
 
     } catch (error) {
       console.error("Connection error:", error);
       setIsConnecting(false);
-      toast.error("Failed to connect to AI: " + error.message);
+      setIsConnected(false);
+      toast.error("Failed to connect to AI: " + (error.response?.data?.detail || error.message));
     }
   };
 
