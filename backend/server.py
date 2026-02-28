@@ -537,7 +537,7 @@ async def analyze_vision(request: VisionAnalysisRequest):
         if not api_key:
             raise HTTPException(status_code=500, detail="LLM API key not configured")
         
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
         
         system_prompt = """You are an expert Caterpillar equipment inspector AI assistant. 
 Analyze the image and identify any issues, defects, or safety concerns.
@@ -570,10 +570,15 @@ Be concise but thorough. Focus on actionable findings."""
             system_message=system_prompt
         ).with_model("openai", "gpt-4o")
         
-        # Create message with image
+        # Create image content
+        image_content = ImageContent(
+            image_base64=request.image_base64
+        )
+        
+        # Create message with image attachment
         user_message = UserMessage(
             text="Analyze this equipment image for any issues or concerns:",
-            images=[f"data:image/jpeg;base64,{request.image_base64}"]
+            file_contents=[image_content]
         )
         
         response = await chat.send_message(user_message)
