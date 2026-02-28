@@ -19,6 +19,8 @@ import {
   Brain,
   Phone,
   PhoneOff,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
