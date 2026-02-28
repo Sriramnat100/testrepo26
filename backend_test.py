@@ -283,6 +283,17 @@ def main():
     print("\n🔍 Testing Status Endpoints...")
     test_results.append(tester.test_status_endpoints())
     
+    print("\n🔧 Testing Bug Fixes & New Features...")
+    test_results.append(tester.test_inspection_dynamic_ids())
+    
+    print("\n🤖 Testing AI Features...")
+    test_results.append(tester.test_ai_tts_endpoint())
+    test_results.append(tester.test_ai_vision_endpoint())
+    test_results.append(tester.test_ai_stt_endpoint())
+    
+    print("\n📸 Testing Media Storage...")
+    test_results.append(tester.test_media_storage_endpoint())
+    
     # Print summary
     print("\n" + "=" * 60)
     print(f"📊 Test Results Summary:")
