@@ -630,22 +630,31 @@ async def text_to_speech(request: TTSRequest):
         if not api_key:
             raise HTTPException(status_code=500, detail="LLM API key not configured")
         
-        from emergentintegrations.llm.openai import OpenAITTS
+        import httpx
         import base64
         
-        tts = OpenAITTS(api_key=api_key)
-        
-        # Generate speech
-        audio_bytes = await tts.generate_speech(
-            text=request.text,
-            voice=request.voice or "alloy",
-            model="tts-1"
-        )
-        
-        # Return base64 encoded audio
-        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-        
-        return {"audio_base64": audio_base64, "format": "mp3"}
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.openai.com/v1/audio/speech",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "tts-1",
+                    "input": request.text,
+                    "voice": request.voice or "alloy",
+                    "response_format": "mp3"
+                },
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"TTS API error: {response.status_code} - {response.text}")
+                raise HTTPException(status_code=500, detail="TTS API error")
+            
+            audio_base64 = base64.b64encode(response.content).decode('utf-8')
+            return {"audio_base64": audio_base64, "format": "mp3"}
         
     except Exception as e:
         logger.error(f"TTS error: {str(e)}")
@@ -660,22 +669,109 @@ async def speech_to_text(request: STTRequest):
         if not api_key:
             raise HTTPException(status_code=500, detail="LLM API key not configured")
         
-        from emergentintegrations.llm.openai import OpenAISTT
+        import httpx
         import base64
         
-        stt = OpenAISTT(api_key=api_key)
-        
-        # Decode audio
         audio_bytes = base64.b64decode(request.audio_base64)
         
-        # Transcribe
-        transcript = await stt.transcribe(audio_bytes)
-        
-        return {"text": transcript, "success": True}
+        async with httpx.AsyncClient() as client:
+            files = {
+                'file': ('audio.webm', audio_bytes, 'audio/webm'),
+                'model': (None, 'whisper-1')
+            }
+            
+            response = await client.post(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={
+                    "Authorization": f"Bearer {api_key}"
+                },
+                files=files,
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"STT API error: {response.status_code} - {response.text}")
+                return {"text": "", "success": False, "error": "STT API error"}
+            
+            result = response.json()
+            return {"text": result.get("text", ""), "success": True}
         
     except Exception as e:
         logger.error(f"STT error: {str(e)}")
         return {"text": "", "success": False, "error": str(e)}
+
+# Media Storage Models
+class MediaUploadRequest(BaseModel):
+    inspection_id: str
+    media_type: str  # "photo" or "video"
+    data_base64: str
+    caption: Optional[str] = None
+    timestamp: Optional[str] = None
+
+# Store captured media
+INSPECTION_MEDIA = {}
+
+@api_router.post("/inspections/{inspection_id}/media")
+async def upload_media(inspection_id: str, request: MediaUploadRequest):
+    """Store captured photo or video for an inspection"""
+    try:
+        import base64
+        
+        media_id = f"m-{uuid.uuid4().hex[:8]}"
+        timestamp = request.timestamp or datetime.now(timezone.utc).strftime("%H:%M:%S")
+        
+        # Create media record
+        media_item = {
+            "id": media_id,
+            "type": request.media_type,
+            "data_base64": request.data_base64,  # Store the actual data
+            "timestamp": timestamp,
+            "caption": request.caption or f"Captured {request.media_type}",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Store in inspection media dict
+        if inspection_id not in INSPECTION_MEDIA:
+            INSPECTION_MEDIA[inspection_id] = []
+        
+        INSPECTION_MEDIA[inspection_id].append(media_item)
+        
+        logger.info(f"Media saved: {media_id} for inspection {inspection_id}")
+        
+        return {
+            "success": True,
+            "media_id": media_id,
+            "message": f"{request.media_type.capitalize()} saved successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Media upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save media: {str(e)}")
+
+@api_router.get("/inspections/{inspection_id}/media")
+async def get_inspection_media(inspection_id: str):
+    """Get all media for an inspection"""
+    media_list = INSPECTION_MEDIA.get(inspection_id, [])
+    
+    # Return without the full base64 data for listing
+    return [{
+        "id": m["id"],
+        "type": m["type"],
+        "timestamp": m["timestamp"],
+        "caption": m["caption"],
+        "thumbnail": m["data_base64"][:100] + "..." if len(m.get("data_base64", "")) > 100 else m.get("data_base64", "")
+    } for m in media_list]
+
+@api_router.get("/inspections/{inspection_id}/media/{media_id}")
+async def get_media_item(inspection_id: str, media_id: str):
+    """Get a specific media item with full data"""
+    media_list = INSPECTION_MEDIA.get(inspection_id, [])
+    
+    for m in media_list:
+        if m["id"] == media_id:
+            return m
+    
+    raise HTTPException(status_code=404, detail="Media not found")
 
 # Include the router in the main app
 app.include_router(api_router)
