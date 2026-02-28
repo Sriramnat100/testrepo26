@@ -59,11 +59,11 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="h-[calc(100vh-4rem)] overflow-hidden" data-testid="dashboard-page">
+    <div className="h-[calc(100vh-4rem)] overflow-hidden bg-slate-50 dark:bg-slate-950 page-enter" data-testid="dashboard-page">
       {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 h-full">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 h-full">
         {/* Left Panel - Inspections Table */}
-        <div className="lg:col-span-8 flex flex-col h-full overflow-hidden pb-16 lg:pb-0">
+        <div className="lg:col-span-8 flex flex-col h-full overflow-hidden pb-20 lg:pb-0">
           <InspectionTable
             inspections={inspections}
             onSearch={handleSearch}
@@ -72,7 +72,7 @@ export default function Dashboard() {
         </div>
 
         {/* Right Panel - Analytics */}
-        <div className="lg:col-span-4 overflow-y-auto hidden lg:block">
+        <div className="lg:col-span-4 overflow-y-auto hidden lg:block pr-1">
           <AnalyticsCards analytics={analytics} />
         </div>
       </div>
@@ -82,12 +82,15 @@ export default function Dashboard() {
 
       {/* Floating Action Button - New Inspection */}
       <button
-        className="fab"
+        className="fab-enterprise group"
         onClick={() => navigate("/app/inspections/new")}
         data-testid="new-inspection-fab"
         aria-label="New Inspection"
       >
         <Plus className="w-6 h-6" />
+        <span className="fab-tooltip">
+          New Inspection
+        </span>
       </button>
     </div>
   );
