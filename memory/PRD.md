@@ -103,12 +103,31 @@ Build a production-quality web app UI called "Cat Inspect AI", an AI-powered ins
 - Camera: WebRTC (navigator.mediaDevices)
 
 ## OpenAI Realtime API Integration
-The live inspection page now uses OpenAI's Realtime API for low-latency voice conversation:
+The live inspection page uses a **hybrid approach** for real-time AI:
+
+### Voice Conversation (OpenAI Realtime API)
 1. Backend creates ephemeral session via `/api/ai/realtime/session`
 2. Frontend receives ephemeral key (ek_*) 
 3. Frontend establishes WebRTC connection directly to OpenAI
-4. Bidirectional audio streaming for real-time conversation
+4. Bidirectional audio streaming for real-time voice conversation
 5. AI responds via voice with equipment inspection guidance
+
+### Real-Time Vision (GPT-4o Vision API)
+**Note:** OpenAI Realtime API does NOT support video/vision - it's audio-only.
+The vision feature uses a hybrid approach:
+1. Auto Vision mode captures frames every 5 seconds
+2. Frames sent to GPT-4o Vision API (`/api/ai/vision/analyze`)
+3. Analysis results spoken back via TTS or injected into voice conversation
+4. Findings automatically added to the Live Findings timeline
+
+### Control Bar Buttons
+- Phone: Connect/disconnect voice AI (Realtime API)
+- Mic: Mute/unmute microphone
+- Video: Start/stop recording
+- Camera: Capture & analyze single photo
+- Speaker: Toggle AI audio output
+- Eye: Toggle auto vision analysis (every 5s)
+- PASS/FAIL/MONITOR: Quick mark buttons
 
 ## Next Tasks
 1. Implement video recording and storage
