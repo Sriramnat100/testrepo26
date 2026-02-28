@@ -843,6 +843,24 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
             {audioEnabled ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
           </button>
 
+          {/* Toggle Auto Vision Analysis */}
+          <button
+            className={cn(
+              "live-control-btn touch-target-lg relative",
+              visionEnabled 
+                ? "bg-purple-600 text-white" 
+                : "live-control-btn-secondary"
+            )}
+            onClick={toggleVisionAnalysis}
+            data-testid="vision-toggle-btn"
+            title={visionEnabled ? "Stop auto vision" : "Start auto vision (analyzes every 5s)"}
+          >
+            {visionEnabled ? <Eye className="w-6 h-6" /> : <EyeOff className="w-6 h-6" />}
+            {visionEnabled && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-purple-400 rounded-full animate-pulse" />
+            )}
+          </button>
+
           <div className="w-px h-10 bg-slate-700 mx-1 hidden sm:block" />
 
           {/* Quick Mark Buttons */}
