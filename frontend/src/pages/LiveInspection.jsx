@@ -351,15 +351,13 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
     }
   };
 
-  // Send image to AI for analysis
+  // Send image to AI for analysis (manual capture)
   const sendImageToAI = async () => {
-    if (!dataChannelRef.current || dataChannelRef.current.readyState !== "open") {
-      toast.error("AI not connected");
+    const imageBase64 = captureFrame();
+    if (!imageBase64) {
+      toast.error("No camera feed available");
       return;
     }
-
-    const imageBase64 = captureFrame();
-    if (!imageBase64) return;
 
     // Save photo
     try {
@@ -374,32 +372,144 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
       console.error("Failed to save photo:", error);
     }
 
-    // Send image to realtime conversation
-    const imageMessage = {
-      type: "conversation.item.create",
-      item: {
-        type: "message",
-        role: "user",
-        content: [
-          {
-            type: "input_image",
-            image: `data:image/jpeg;base64,${imageBase64}`
-          },
-          {
-            type: "input_text",
-            text: "Please analyze this image for any issues, damage, leaks, rust, or safety concerns. Tell me what you see."
-          }
-        ]
-      }
-    };
+    // Analyze with GPT-4o Vision API
+    await analyzeFrameWithVision(imageBase64, true);
+    toast.success("Photo captured and analyzed");
+  };
 
-    dataChannelRef.current.send(JSON.stringify(imageMessage));
+  // Analyze a frame using GPT-4o Vision API
+  const analyzeFrameWithVision = async (imageBase64, speakResult = false) => {
+    try {
+      setAiStatus("analyzing");
+      
+      const response = await axios.post(`${API_URL}/ai/vision/analyze`, {
+        image_base64: imageBase64,
+        context: "equipment inspection"
+      });
+
+      const result = response.data;
+      setLastVisionResult(result.spoken_response || result.analysis);
+
+      // Add findings if detected
+      if (result.findings && result.findings.length > 0) {
+        const newFindings = result.findings.map((f, idx) => ({
+          id: `f-${Date.now()}-${idx}`,
+          timestamp: new Date().toLocaleTimeString(),
+          severity: f.severity || "MEDIUM",
+          title: f.issue || "Issue detected",
+          recommendation: f.recommendation || "",
+          confidence: 0.9,
+          category: "Vision AI"
+        }));
+
+        setFindings(prev => [...newFindings, ...prev].slice(0, 20));
+
+        if (result.should_alert) {
+          toast.error("Safety Alert!", {
+            description: result.analysis,
+          });
+        }
+      }
+
+      // Speak the result through the realtime connection or TTS
+      if (speakResult && result.spoken_response) {
+        await speakVisionResult(result.spoken_response);
+      }
+
+      setAiStatus(isConnected ? "listening" : "idle");
+      return result;
+    } catch (error) {
+      console.error("Vision analysis error:", error);
+      setAiStatus(isConnected ? "listening" : "idle");
+      return null;
+    }
+  };
+
+  // Speak vision result - inject into realtime conversation or use TTS
+  const speakVisionResult = async (text) => {
+    // If connected to realtime, send as assistant message to be spoken
+    if (isConnected && dataChannelRef.current?.readyState === "open") {
+      // Create a response with the vision analysis
+      const visionMessage = {
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: text
+            }
+          ]
+        }
+      };
+      dataChannelRef.current.send(JSON.stringify(visionMessage));
+      
+      // Trigger audio response
+      dataChannelRef.current.send(JSON.stringify({ 
+        type: "response.create",
+        response: {
+          modalities: ["audio"],
+          instructions: `Say exactly this: "${text}"`
+        }
+      }));
+    } else {
+      // Fall back to TTS API
+      try {
+        const ttsResponse = await axios.post(`${API_URL}/ai/tts`, {
+          text: text,
+          voice: "alloy"
+        });
+        
+        if (ttsResponse.data.audio_base64) {
+          const audio = new Audio(`data:audio/mp3;base64,${ttsResponse.data.audio_base64}`);
+          audio.play();
+        }
+      } catch (error) {
+        console.error("TTS error:", error);
+      }
+    }
+  };
+
+  // Start continuous vision analysis
+  const startVisionAnalysis = () => {
+    if (visionIntervalRef.current) return;
     
-    // Request response
-    dataChannelRef.current.send(JSON.stringify({ type: "response.create" }));
+    setVisionEnabled(true);
+    toast.success("Auto vision analysis started (every 5 seconds)");
     
-    toast.success("Photo sent to AI for analysis");
-    setAiStatus("thinking");
+    // Analyze immediately
+    const imageBase64 = captureFrame();
+    if (imageBase64) {
+      analyzeFrameWithVision(imageBase64, true);
+    }
+    
+    // Then every 5 seconds
+    visionIntervalRef.current = setInterval(async () => {
+      const frame = captureFrame();
+      if (frame) {
+        await analyzeFrameWithVision(frame, true);
+      }
+    }, 5000);
+  };
+
+  // Stop continuous vision analysis
+  const stopVisionAnalysis = () => {
+    if (visionIntervalRef.current) {
+      clearInterval(visionIntervalRef.current);
+      visionIntervalRef.current = null;
+    }
+    setVisionEnabled(false);
+    toast.info("Auto vision analysis stopped");
+  };
+
+  // Toggle vision analysis
+  const toggleVisionAnalysis = () => {
+    if (visionEnabled) {
+      stopVisionAnalysis();
+    } else {
+      startVisionAnalysis();
+    }
   };
 
   // Disconnect from Realtime API
