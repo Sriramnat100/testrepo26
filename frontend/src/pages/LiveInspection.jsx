@@ -11,14 +11,14 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  Scan,
   Square,
   Truck,
   Clock,
   Volume2,
   VolumeX,
-  Eye,
   Brain,
+  Phone,
+  PhoneOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -32,22 +32,21 @@ export default function LiveInspection() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
+  const peerConnectionRef = useRef(null);
+  const dataChannelRef = useRef(null);
+  const audioElementRef = useRef(null);
 
   const [isRecording, setIsRecording] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiEnabled, setAiEnabled] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [findings, setFindings] = useState([]);
   const [cameraError, setCameraError] = useState(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
-  const [lastAnalysis, setLastAnalysis] = useState("");
-  const [analysisInterval, setAnalysisIntervalState] = useState(null);
+  const [lastTranscript, setLastTranscript] = useState("");
+  const [aiStatus, setAiStatus] = useState("idle"); // idle, listening, thinking, speaking
 
   // Update time
   useEffect(() => {
@@ -78,14 +77,338 @@ export default function LiveInspection() {
     startCamera();
 
     return () => {
+      disconnectRealtime();
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
-      if (analysisInterval) {
-        clearInterval(analysisInterval);
-      }
     };
   }, []);
+
+  // Get ephemeral token from backend
+  const getEphemeralToken = async () => {
+    try {
+      const response = await axios.post(`${API_URL}/ai/realtime/session`);
+      return response.data.client_secret;
+    } catch (error) {
+      console.error("Failed to get ephemeral token:", error);
+      throw error;
+    }
+  };
+
+  // Connect to OpenAI Realtime API via WebRTC
+  const connectRealtime = async () => {
+    if (isConnecting || isConnected) return;
+    
+    setIsConnecting(true);
+    toast.info("Connecting to AI...");
+
+    try {
+      // Get ephemeral token
+      const ephemeralToken = await getEphemeralToken();
+      
+      // Create peer connection
+      const pc = new RTCPeerConnection();
+      peerConnectionRef.current = pc;
+
+      // Set up audio element for AI responses
+      const audioEl = document.createElement("audio");
+      audioEl.autoplay = true;
+      audioElementRef.current = audioEl;
+      
+      pc.ontrack = (e) => {
+        audioEl.srcObject = e.streams[0];
+      };
+
+      // Add local audio track (microphone)
+      if (streamRef.current) {
+        const audioTrack = streamRef.current.getAudioTracks()[0];
+        if (audioTrack) {
+          pc.addTrack(audioTrack, streamRef.current);
+        }
+      }
+
+      // Set up data channel for events
+      const dc = pc.createDataChannel("oai-events");
+      dataChannelRef.current = dc;
+
+      dc.onopen = () => {
+        console.log("Data channel opened");
+        // Configure session for equipment inspection
+        const sessionConfig = {
+          type: "session.update",
+          session: {
+            type: "realtime",
+            instructions: `You are an expert Caterpillar equipment inspector AI assistant conducting a live inspection. 
+            
+Your job is to:
+- Listen to the inspector's observations and questions
+- Provide real-time guidance on what to look for
+- Alert them to potential safety hazards
+- Help identify parts and components
+- Suggest maintenance recommendations
+
+Be concise and direct in your responses. Speak naturally as if you're alongside the inspector.
+When you identify issues, categorize them as HIGH (safety critical), MEDIUM (needs attention), or LOW (minor) severity.
+
+Start by greeting the inspector and asking what equipment they're inspecting today.`,
+            voice: "alloy",
+            input_audio_transcription: {
+              model: "whisper-1"
+            },
+            turn_detection: {
+              type: "server_vad",
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500
+            }
+          }
+        };
+        dc.send(JSON.stringify(sessionConfig));
+      };
+
+      dc.onmessage = (e) => {
+        handleRealtimeEvent(JSON.parse(e.data));
+      };
+
+      dc.onerror = (e) => {
+        console.error("Data channel error:", e);
+      };
+
+      // Create and set local description
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // Connect to OpenAI Realtime API
+      const baseUrl = "https://api.openai.com/v1/realtime/calls";
+      const sdpResponse = await fetch(baseUrl, {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${ephemeralToken}`,
+          "Content-Type": "application/sdp",
+        },
+      });
+
+      if (!sdpResponse.ok) {
+        throw new Error(`Failed to connect: ${sdpResponse.status}`);
+      }
+
+      const answerSdp = await sdpResponse.text();
+      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+
+      setIsConnected(true);
+      setIsConnecting(false);
+      toast.success("Connected to AI Inspector");
+
+    } catch (error) {
+      console.error("Connection error:", error);
+      setIsConnecting(false);
+      toast.error("Failed to connect to AI: " + error.message);
+    }
+  };
+
+  // Handle events from Realtime API
+  const handleRealtimeEvent = (event) => {
+    console.log("Realtime event:", event.type, event);
+
+    switch (event.type) {
+      case "session.created":
+        console.log("Session created");
+        setAiStatus("listening");
+        break;
+
+      case "session.updated":
+        console.log("Session updated");
+        break;
+
+      case "input_audio_buffer.speech_started":
+        setAiStatus("listening");
+        break;
+
+      case "input_audio_buffer.speech_stopped":
+        setAiStatus("thinking");
+        break;
+
+      case "conversation.item.input_audio_transcription.completed":
+        // User's speech transcribed
+        if (event.transcript) {
+          setLastTranscript(event.transcript);
+          toast.info(`You: "${event.transcript}"`);
+        }
+        break;
+
+      case "response.audio_transcript.delta":
+      case "response.output_audio_transcript.delta":
+        // AI is speaking - partial transcript
+        setAiStatus("speaking");
+        break;
+
+      case "response.audio.done":
+      case "response.output_audio.done":
+        setAiStatus("listening");
+        break;
+
+      case "response.done":
+        setAiStatus("listening");
+        // Check if response contains findings
+        if (event.response?.output) {
+          processAIResponse(event.response.output);
+        }
+        break;
+
+      case "response.text.done":
+      case "response.output_text.done":
+        // Text response completed
+        if (event.text) {
+          processTextForFindings(event.text);
+        }
+        break;
+
+      case "error":
+        console.error("Realtime API error:", event.error);
+        toast.error("AI Error: " + (event.error?.message || "Unknown error"));
+        break;
+
+      default:
+        // Log other events for debugging
+        if (event.type.includes("error")) {
+          console.error("Error event:", event);
+        }
+    }
+  };
+
+  // Process AI response for findings
+  const processAIResponse = (output) => {
+    output.forEach((item) => {
+      if (item.type === "message" && item.content) {
+        item.content.forEach((content) => {
+          if (content.type === "text" || content.type === "output_text") {
+            processTextForFindings(content.text);
+          }
+        });
+      }
+    });
+  };
+
+  // Extract findings from AI text
+  const processTextForFindings = (text) => {
+    if (!text) return;
+
+    // Look for severity indicators in AI response
+    const severityPatterns = [
+      { pattern: /HIGH|CRITICAL|SAFETY|DANGER|URGENT/gi, severity: "HIGH" },
+      { pattern: /MEDIUM|ATTENTION|MONITOR|CAUTION/gi, severity: "MEDIUM" },
+      { pattern: /LOW|MINOR|NOTE/gi, severity: "LOW" },
+    ];
+
+    let detectedSeverity = null;
+    for (const { pattern, severity } of severityPatterns) {
+      if (pattern.test(text)) {
+        detectedSeverity = severity;
+        break;
+      }
+    }
+
+    // If severity detected, create a finding
+    if (detectedSeverity) {
+      const newFinding = {
+        id: `f-${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString(),
+        severity: detectedSeverity,
+        title: text.substring(0, 50) + (text.length > 50 ? "..." : ""),
+        recommendation: text.substring(0, 150),
+        confidence: 0.9,
+        category: "AI Detection"
+      };
+
+      setFindings(prev => [newFinding, ...prev].slice(0, 20));
+
+      if (detectedSeverity === "HIGH") {
+        toast.error(`Safety Alert Detected!`, {
+          description: text.substring(0, 100),
+        });
+      }
+    }
+  };
+
+  // Send image to AI for analysis
+  const sendImageToAI = async () => {
+    if (!dataChannelRef.current || dataChannelRef.current.readyState !== "open") {
+      toast.error("AI not connected");
+      return;
+    }
+
+    const imageBase64 = captureFrame();
+    if (!imageBase64) return;
+
+    // Save photo
+    try {
+      await axios.post(`${API_URL}/inspections/${id}/media`, {
+        inspection_id: id,
+        media_type: "photo",
+        data_base64: imageBase64,
+        caption: "Captured during inspection",
+        timestamp: new Date().toLocaleTimeString()
+      });
+    } catch (error) {
+      console.error("Failed to save photo:", error);
+    }
+
+    // Send image to realtime conversation
+    const imageMessage = {
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_image",
+            image: `data:image/jpeg;base64,${imageBase64}`
+          },
+          {
+            type: "input_text",
+            text: "Please analyze this image for any issues, damage, leaks, rust, or safety concerns. Tell me what you see."
+          }
+        ]
+      }
+    };
+
+    dataChannelRef.current.send(JSON.stringify(imageMessage));
+    
+    // Request response
+    dataChannelRef.current.send(JSON.stringify({ type: "response.create" }));
+    
+    toast.success("Photo sent to AI for analysis");
+    setAiStatus("thinking");
+  };
+
+  // Disconnect from Realtime API
+  const disconnectRealtime = () => {
+    if (dataChannelRef.current) {
+      dataChannelRef.current.close();
+      dataChannelRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (audioElementRef.current) {
+      audioElementRef.current.srcObject = null;
+      audioElementRef.current = null;
+    }
+    setIsConnected(false);
+    setAiStatus("idle");
+  };
+
+  // Toggle connection
+  const toggleConnection = () => {
+    if (isConnected) {
+      disconnectRealtime();
+      toast.info("Disconnected from AI");
+    } else {
+      connectRealtime();
+    }
+  };
 
   // Capture frame from video
   const captureFrame = useCallback(() => {
@@ -95,260 +418,68 @@ export default function LiveInspection() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
     ctx.drawImage(video, 0, 0);
     
-    // Get base64 image (without the data:image/jpeg;base64, prefix)
     const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
     return dataUrl.split(',')[1];
   }, []);
 
-  // Analyze frame with AI
-  const analyzeFrame = useCallback(async () => {
-    if (isAnalyzing) return;
-    
-    const imageBase64 = captureFrame();
-    if (!imageBase64) return;
-    
-    setIsAnalyzing(true);
-    
-    try {
-      const response = await axios.post(`${API_URL}/ai/vision/analyze`, {
-        image_base64: imageBase64,
-        context: "Caterpillar equipment inspection"
+  // Toggle microphone
+  const toggleMute = () => {
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = isMuted;
       });
-      
-      const { analysis, findings: newFindings, severity, should_alert, spoken_response } = response.data;
-      
-      setLastAnalysis(analysis);
-      
-      // Add new findings
-      if (newFindings && newFindings.length > 0) {
-        const formattedFindings = newFindings.map((f, idx) => ({
-          id: `f-${Date.now()}-${idx}`,
-          timestamp: new Date().toLocaleTimeString(),
-          severity: f.severity || "LOW",
-          title: f.issue || "Issue detected",
-          recommendation: f.recommendation || "Review and assess",
-          confidence: 0.85 + Math.random() * 0.1,
-          category: f.location || "General"
-        }));
-        
-        setFindings(prev => [...formattedFindings, ...prev].slice(0, 20));
-        
-        // Show toast for high severity
-        if (should_alert) {
-          toast.error(`Safety Alert: ${formattedFindings[0]?.title}`, {
-            description: formattedFindings[0]?.recommendation,
-          });
-        }
-      }
-      
-      // Speak the response if audio is enabled
-      if (audioEnabled && spoken_response && spoken_response.length > 0) {
-        speakText(spoken_response);
-      }
-      
-    } catch (error) {
-      console.error("Analysis error:", error);
-    } finally {
-      setIsAnalyzing(false);
     }
-  }, [isAnalyzing, captureFrame, audioEnabled]);
-
-  // Text to Speech
-  const speakText = async (text) => {
-    if (isSpeaking || !text) return;
-    
-    setIsSpeaking(true);
-    
-    try {
-      const response = await axios.post(`${API_URL}/ai/tts`, {
-        text: text,
-        voice: "alloy"
-      });
-      
-      const { audio_base64 } = response.data;
-      
-      // Create and play audio
-      const audioBlob = new Blob(
-        [Uint8Array.from(atob(audio_base64), c => c.charCodeAt(0))],
-        { type: 'audio/mp3' }
-      );
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      
-      audio.onended = () => {
-        setIsSpeaking(false);
-        URL.revokeObjectURL(audioUrl);
-      };
-      
-      audio.onerror = () => {
-        setIsSpeaking(false);
-        URL.revokeObjectURL(audioUrl);
-      };
-      
-      await audio.play();
-      
-    } catch (error) {
-      console.error("TTS error:", error);
-      setIsSpeaking(false);
-    }
+    setIsMuted(!isMuted);
+    toast.info(isMuted ? "Microphone unmuted" : "Microphone muted");
   };
 
-  // Start/Stop AI Analysis
-  const toggleAI = () => {
-    if (aiEnabled) {
-      // Stop AI
-      if (analysisInterval) {
-        clearInterval(analysisInterval);
-        setAnalysisIntervalState(null);
-      }
-      setAiEnabled(false);
-      toast.info("AI Analysis stopped");
-    } else {
-      // Start AI - analyze every 5 seconds
-      setAiEnabled(true);
-      toast.success("AI Analysis started", {
-        description: "Analyzing camera feed every 5 seconds"
-      });
-      
-      // Immediate first analysis
-      analyzeFrame();
-      
-      // Set up interval
-      const interval = setInterval(() => {
-        analyzeFrame();
-      }, 5000);
-      setAnalysisIntervalState(interval);
+  // Toggle AI audio output
+  const toggleAudioOutput = () => {
+    if (audioElementRef.current) {
+      audioElementRef.current.muted = audioEnabled;
     }
-  };
-
-  // Start listening for voice
-  const startListening = async () => {
-    if (!streamRef.current) return;
-    
-    try {
-      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      mediaRecorderRef.current = new MediaRecorder(audioStream);
-      audioChunksRef.current = [];
-      
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-      
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        
-        // Convert to base64
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64 = reader.result.split(',')[1];
-          
-          try {
-            // Send to STT
-            const sttResponse = await axios.post(`${API_URL}/ai/stt`, {
-              audio_base64: base64
-            });
-            
-            if (sttResponse.data.success && sttResponse.data.text) {
-              toast.info(`You said: "${sttResponse.data.text}"`);
-              
-              // Process the voice command
-              // For now, just do an analysis
-              analyzeFrame();
-            }
-          } catch (error) {
-            console.error("STT error:", error);
-          }
-        };
-        reader.readAsDataURL(audioBlob);
-        
-        audioStream.getTracks().forEach(track => track.stop());
-      };
-      
-      mediaRecorderRef.current.start();
-      setIsListening(true);
-      toast.info("Listening...");
-      
-    } catch (error) {
-      console.error("Microphone error:", error);
-      toast.error("Could not access microphone");
-    }
-  };
-
-  const stopListening = () => {
-    if (mediaRecorderRef.current && isListening) {
-      mediaRecorderRef.current.stop();
-      setIsListening(false);
-    }
+    setAudioEnabled(!audioEnabled);
+    toast.info(audioEnabled ? "AI voice muted" : "AI voice unmuted");
   };
 
   const toggleRecording = () => {
-    if (!isRecording) {
-      setFindings([]);
-      toast.success("Recording started");
-    } else {
-      toast.info("Recording stopped");
-    }
     setIsRecording(!isRecording);
-  };
-
-  const capturePhoto = async () => {
-    const imageBase64 = captureFrame();
-    if (imageBase64) {
-      toast.success("Photo captured");
-      
-      // Save to backend
-      try {
-        await axios.post(`${API_URL}/inspections/${id}/media`, {
-          inspection_id: id,
-          media_type: "photo",
-          data_base64: imageBase64,
-          caption: "Captured during inspection",
-          timestamp: new Date().toLocaleTimeString()
-        });
-        toast.success("Photo saved to inspection");
-      } catch (error) {
-        console.error("Failed to save photo:", error);
-      }
-      
-      // Analyze the captured photo
-      if (aiEnabled) {
-        analyzeFrame();
-      }
-    }
+    toast.info(isRecording ? "Recording stopped" : "Recording started");
   };
 
   const quickMark = (result) => {
+    const newFinding = {
+      id: `f-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      severity: result === "FAIL" ? "HIGH" : result === "MONITOR" ? "MEDIUM" : "LOW",
+      title: `Manual mark: ${result}`,
+      recommendation: `Inspector marked this item as ${result}`,
+      confidence: 1.0,
+      category: "Manual"
+    };
+    setFindings(prev => [newFinding, ...prev]);
     toast.success(`Marked as ${result}`);
   };
 
   const finishInspection = async () => {
     setIsGeneratingReport(true);
+    disconnectRealtime();
     
-    // Stop AI analysis
-    if (analysisInterval) {
-      clearInterval(analysisInterval);
-    }
-    setAiEnabled(false);
-    
-    if (isRecording) {
-      setIsRecording(false);
-    }
+    if (isRecording) setIsRecording(false);
     
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
     }
 
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    
     navigate(`/app/inspections/${id}`);
   };
 
-  // Loading state for report generation
+  // Loading state
   if (isGeneratingReport) {
     return (
       <div className="h-[calc(100vh-4rem)] bg-slate-900 flex items-center justify-center" data-testid="generating-report">
@@ -365,10 +496,8 @@ export default function LiveInspection() {
 
   return (
     <div className="h-[calc(100vh-4rem)] bg-slate-900 flex flex-col" data-testid="live-inspection-page">
-      {/* Hidden canvas for frame capture */}
       <canvas ref={canvasRef} className="hidden" />
       
-      {/* Main Content */}
       <div className="flex-1 flex relative overflow-hidden">
         {/* Video Feed */}
         <div className="flex-1 relative bg-black">
@@ -396,36 +525,56 @@ export default function LiveInspection() {
                 className="w-full h-full object-cover"
                 data-testid="camera-feed"
               />
-              {/* Gradient overlays */}
               <div className="gradient-fade-down absolute inset-x-0 top-0 h-32 pointer-events-none" />
               <div className="gradient-fade-up absolute inset-x-0 bottom-0 h-48 pointer-events-none" />
             </>
           )}
 
-          {/* Top overlay - Equipment Info & Status */}
+          {/* Top overlay */}
           <div className="live-overlay-header">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                {/* Equipment Badge */}
                 <div className="live-equipment-badge">
                   <Truck className="w-4 h-4" />
                   <span>CAT D6 Dozer</span>
-                  <span className="opacity-60">•</span>
-                  <span className="font-mono text-[12px] opacity-80">CAT0D6X67890</span>
                 </div>
                 
-                {/* AI Status Badge */}
-                {aiEnabled && (
-                  <div className="live-equipment-badge bg-emerald-500/20 border-emerald-500/30">
-                    <Brain className="w-4 h-4 text-emerald-400" />
-                    <span className="text-emerald-400 font-semibold">AI Active</span>
-                    {isAnalyzing && (
-                      <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                {/* Connection Status */}
+                {isConnected && (
+                  <div className={cn(
+                    "live-equipment-badge",
+                    aiStatus === "speaking" ? "bg-[#F7B500]/20 border-[#F7B500]/30" :
+                    aiStatus === "listening" ? "bg-emerald-500/20 border-emerald-500/30" :
+                    aiStatus === "thinking" ? "bg-blue-500/20 border-blue-500/30" :
+                    "bg-slate-500/20 border-slate-500/30"
+                  )}>
+                    <Brain className={cn(
+                      "w-4 h-4",
+                      aiStatus === "speaking" ? "text-[#F7B500]" :
+                      aiStatus === "listening" ? "text-emerald-400" :
+                      aiStatus === "thinking" ? "text-blue-400" :
+                      "text-slate-400"
+                    )} />
+                    <span className={cn(
+                      aiStatus === "speaking" ? "text-[#F7B500]" :
+                      aiStatus === "listening" ? "text-emerald-400" :
+                      aiStatus === "thinking" ? "text-blue-400" :
+                      "text-slate-400"
+                    )}>
+                      {aiStatus === "speaking" ? "AI Speaking" :
+                       aiStatus === "listening" ? "Listening" :
+                       aiStatus === "thinking" ? "Thinking..." :
+                       "AI Ready"}
+                    </span>
+                    {(aiStatus === "listening" || aiStatus === "speaking") && (
+                      <span className={cn(
+                        "w-2 h-2 rounded-full animate-pulse",
+                        aiStatus === "speaking" ? "bg-[#F7B500]" : "bg-emerald-400"
+                      )} />
                     )}
                   </div>
                 )}
                 
-                {/* Recording Badge */}
                 {isRecording && (
                   <div className="streaming-badge">
                     <span className="streaming-dot" />
@@ -435,13 +584,11 @@ export default function LiveInspection() {
               </div>
 
               <div className="flex items-center gap-3">
-                {/* Time */}
                 <div className="live-equipment-badge">
                   <Clock className="w-4 h-4" />
                   <span className="font-mono">{currentTime}</span>
                 </div>
                 
-                {/* Findings Counter */}
                 {findings.length > 0 && (
                   <div className="live-equipment-badge bg-[#F7B500]/20 border-[#F7B500]/30">
                     <AlertTriangle className="w-4 h-4 text-[#F7B500]" />
@@ -454,7 +601,7 @@ export default function LiveInspection() {
           </div>
 
           {/* AI Speaking Indicator */}
-          {isSpeaking && (
+          {aiStatus === "speaking" && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
               <div className="w-32 h-32 rounded-full bg-[#F7B500]/20 flex items-center justify-center animate-pulse">
                 <div className="w-24 h-24 rounded-full bg-[#F7B500]/40 flex items-center justify-center">
@@ -464,22 +611,12 @@ export default function LiveInspection() {
             </div>
           )}
 
-          {/* Listening Indicator */}
-          {isListening && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-              <div className="w-32 h-32 rounded-full bg-blue-500/20 flex items-center justify-center animate-pulse">
-                <div className="w-24 h-24 rounded-full bg-blue-500/40 flex items-center justify-center">
-                  <Mic className="w-12 h-12 text-blue-400" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Last Analysis Text */}
-          {lastAnalysis && aiEnabled && (
+          {/* Last Transcript */}
+          {lastTranscript && isConnected && (
             <div className="absolute bottom-24 left-4 right-4 pointer-events-none">
               <div className="bg-black/60 backdrop-blur-sm rounded-lg p-3 max-w-md">
-                <p className="text-[12px] text-white/90">{lastAnalysis}</p>
+                <p className="text-[11px] text-slate-400 mb-1">You said:</p>
+                <p className="text-[13px] text-white">{lastTranscript}</p>
               </div>
             </div>
           )}
@@ -487,28 +624,44 @@ export default function LiveInspection() {
 
         {/* Right Rail - Live Findings */}
         <div className="w-80 xl:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 hidden md:block overflow-hidden">
-          <LiveFindingsTimeline findings={findings} isRecording={aiEnabled} />
+          <LiveFindingsTimeline findings={findings} isRecording={isConnected} />
         </div>
       </div>
 
       {/* Bottom Control Bar */}
       <div className="live-control-bar">
         <div className="flex items-center justify-center gap-3 sm:gap-4">
-          {/* AI Toggle - Main Feature */}
+          {/* Connect/Disconnect AI */}
           <button
             className={cn(
               "live-control-btn touch-target-lg relative",
-              aiEnabled 
+              isConnected 
                 ? "bg-emerald-500 text-white" 
+                : isConnecting
+                ? "bg-blue-500 text-white animate-pulse"
                 : "bg-slate-700 text-white border border-slate-600"
             )}
-            onClick={toggleAI}
-            data-testid="ai-toggle-btn"
+            onClick={toggleConnection}
+            disabled={isConnecting}
+            data-testid="ai-connect-btn"
           >
-            <Brain className="w-6 h-6" />
-            {aiEnabled && isAnalyzing && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-[#F7B500] rounded-full animate-ping" />
+            {isConnected ? (
+              <PhoneOff className="w-6 h-6" />
+            ) : (
+              <Phone className="w-6 h-6" />
             )}
+          </button>
+
+          {/* Mute/Unmute Mic */}
+          <button
+            className={cn(
+              "live-control-btn touch-target-lg",
+              isMuted ? "bg-red-600 text-white" : "live-control-btn-secondary"
+            )}
+            onClick={toggleMute}
+            data-testid="mic-toggle-btn"
+          >
+            {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
           </button>
 
           {/* Start/Stop Recording */}
@@ -527,51 +680,30 @@ export default function LiveInspection() {
             )}
           </button>
 
-          {/* Capture Photo */}
+          {/* Capture & Analyze Photo */}
           <button
-            className="live-control-btn live-control-btn-secondary touch-target-lg"
-            onClick={capturePhoto}
-            data-testid="capture-photo-btn"
+            className={cn(
+              "live-control-btn touch-target-lg",
+              isConnected ? "live-control-btn-primary" : "live-control-btn-secondary"
+            )}
+            onClick={sendImageToAI}
+            data-testid="capture-analyze-btn"
           >
             <Camera className="w-6 h-6" />
           </button>
 
-          {/* Voice Input - Hold to Talk */}
+          {/* Toggle AI Audio */}
           <button
             className={cn(
               "live-control-btn touch-target-lg",
-              isListening
-                ? "bg-blue-500 text-white"
-                : "live-control-btn-secondary"
+              !audioEnabled ? "bg-red-600 text-white" : "live-control-btn-secondary"
             )}
-            onMouseDown={startListening}
-            onMouseUp={stopListening}
-            onMouseLeave={() => isListening && stopListening()}
-            onTouchStart={startListening}
-            onTouchEnd={stopListening}
-            data-testid="voice-btn"
-          >
-            <Mic className="w-6 h-6" />
-          </button>
-
-          {/* Audio Toggle */}
-          <button
-            className={cn(
-              "live-control-btn touch-target-lg",
-              audioEnabled
-                ? "live-control-btn-secondary"
-                : "bg-red-600 text-white"
-            )}
-            onClick={() => {
-              setAudioEnabled(!audioEnabled);
-              toast.info(audioEnabled ? "AI voice disabled" : "AI voice enabled");
-            }}
+            onClick={toggleAudioOutput}
             data-testid="audio-toggle-btn"
           >
             {audioEnabled ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
           </button>
 
-          {/* Divider */}
           <div className="w-px h-10 bg-slate-700 mx-1 hidden sm:block" />
 
           {/* Quick Mark Buttons */}
@@ -602,7 +734,6 @@ export default function LiveInspection() {
             </button>
           </div>
 
-          {/* Divider */}
           <div className="w-px h-10 bg-slate-700 mx-1 hidden sm:block" />
 
           {/* Finish Inspection */}
