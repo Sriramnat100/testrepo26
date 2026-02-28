@@ -270,7 +270,7 @@
 }
 
 .table-row-clickable:hover {
-  @apply bg-cat-yellow-subtle;
+  background-color: rgba(247, 181, 0, 0.08);
 }
 
 /* ========================================
