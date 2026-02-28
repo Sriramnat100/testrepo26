@@ -508,6 +508,26 @@ Be concise, professional, and helpful. Focus on actionable insights."""
         else:
             return ChatResponse(response="I can help you with inspection summaries, failure analysis, and equipment recommendations. What would you like to know?")
 
+# AI Vision Analysis Request
+class VisionAnalysisRequest(BaseModel):
+    image_base64: str
+    context: Optional[str] = "equipment inspection"
+
+class VisionAnalysisResponse(BaseModel):
+    analysis: str
+    findings: List[dict]
+    severity: str
+    should_alert: bool
+
+# Text to Speech Request
+class TTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = "alloy"
+
+# Speech to Text Request  
+class STTRequest(BaseModel):
+    audio_base64: str
+
 # Include the router in the main app
 app.include_router(api_router)
 
