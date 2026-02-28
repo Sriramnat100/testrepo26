@@ -656,32 +656,29 @@ async def speech_to_text(request: STTRequest):
         if not api_key:
             raise HTTPException(status_code=500, detail="LLM API key not configured")
         
-        import httpx
+        from emergentintegrations.llm.openai import OpenAISpeechToText
         import base64
+        import tempfile
+        import os as os_module
         
+        stt = OpenAISpeechToText(api_key=api_key)
+        
+        # Decode audio and save to temp file
         audio_bytes = base64.b64decode(request.audio_base64)
         
-        async with httpx.AsyncClient() as client:
-            files = {
-                'file': ('audio.webm', audio_bytes, 'audio/webm'),
-                'model': (None, 'whisper-1')
-            }
-            
-            response = await client.post(
-                "https://api.openai.com/v1/audio/transcriptions",
-                headers={
-                    "Authorization": f"Bearer {api_key}"
-                },
-                files=files,
-                timeout=30.0
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"STT API error: {response.status_code} - {response.text}")
-                return {"text": "", "success": False, "error": "STT API error"}
-            
-            result = response.json()
-            return {"text": result.get("text", ""), "success": True}
+        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_file:
+            temp_file.write(audio_bytes)
+            temp_path = temp_file.name
+        
+        try:
+            # Transcribe
+            result = await stt.transcribe(temp_path, response_format="text")
+            transcript = str(result) if result else ""
+            return {"text": transcript, "success": True}
+        finally:
+            # Clean up temp file
+            if os_module.path.exists(temp_path):
+                os_module.remove(temp_path)
         
     except Exception as e:
         logger.error(f"STT error: {str(e)}")
