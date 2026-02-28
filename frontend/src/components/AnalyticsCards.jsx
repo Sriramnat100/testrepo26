@@ -130,8 +130,8 @@ export const AnalyticsCards = ({ analytics }) => {
         </CardHeader>
         <CardContent className="pt-0">
           <div className="flex items-center gap-4">
-            <div className="h-28 w-28">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-28 w-28 min-w-[112px]">
+              <ResponsiveContainer width="99%" height="100%">
                 <PieChart>
                   <Pie
                     data={pieData}
