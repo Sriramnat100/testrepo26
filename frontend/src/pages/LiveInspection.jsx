@@ -765,6 +765,19 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
               </div>
             </div>
           )}
+
+          {/* Last Vision Result */}
+          {lastVisionResult && visionEnabled && (
+            <div className="absolute bottom-24 right-4 pointer-events-none max-w-sm">
+              <div className="bg-purple-900/80 backdrop-blur-sm rounded-lg p-3 border border-purple-500/30">
+                <div className="flex items-center gap-2 mb-1">
+                  <Eye className="w-3 h-3 text-purple-400" />
+                  <p className="text-[11px] text-purple-300">Vision AI:</p>
+                </div>
+                <p className="text-[13px] text-white">{lastVisionResult}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Rail - Live Findings */}
