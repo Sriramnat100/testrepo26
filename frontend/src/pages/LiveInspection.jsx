@@ -679,12 +679,13 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
                 </div>
                 
                 {/* Connection Status */}
-                {isConnected && (
+                {(isConnected || visionEnabled) && (
                   <div className={cn(
                     "live-equipment-badge",
                     aiStatus === "speaking" ? "bg-[#F7B500]/20 border-[#F7B500]/30" :
                     aiStatus === "listening" ? "bg-emerald-500/20 border-emerald-500/30" :
                     aiStatus === "thinking" ? "bg-blue-500/20 border-blue-500/30" :
+                    aiStatus === "analyzing" ? "bg-purple-500/20 border-purple-500/30" :
                     "bg-slate-500/20 border-slate-500/30"
                   )}>
                     <Brain className={cn(
@@ -692,23 +693,28 @@ Start by greeting the inspector and asking what equipment they're inspecting tod
                       aiStatus === "speaking" ? "text-[#F7B500]" :
                       aiStatus === "listening" ? "text-emerald-400" :
                       aiStatus === "thinking" ? "text-blue-400" :
+                      aiStatus === "analyzing" ? "text-purple-400" :
                       "text-slate-400"
                     )} />
                     <span className={cn(
                       aiStatus === "speaking" ? "text-[#F7B500]" :
                       aiStatus === "listening" ? "text-emerald-400" :
                       aiStatus === "thinking" ? "text-blue-400" :
+                      aiStatus === "analyzing" ? "text-purple-400" :
                       "text-slate-400"
                     )}>
                       {aiStatus === "speaking" ? "AI Speaking" :
                        aiStatus === "listening" ? "Listening" :
                        aiStatus === "thinking" ? "Thinking..." :
+                       aiStatus === "analyzing" ? "Analyzing..." :
                        "AI Ready"}
                     </span>
-                    {(aiStatus === "listening" || aiStatus === "speaking") && (
+                    {(aiStatus === "listening" || aiStatus === "speaking" || aiStatus === "analyzing") && (
                       <span className={cn(
                         "w-2 h-2 rounded-full animate-pulse",
-                        aiStatus === "speaking" ? "bg-[#F7B500]" : "bg-emerald-400"
+                        aiStatus === "speaking" ? "bg-[#F7B500]" : 
+                        aiStatus === "analyzing" ? "bg-purple-400" :
+                        "bg-emerald-400"
                       )} />
                     )}
                   </div>
