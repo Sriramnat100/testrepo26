@@ -46,7 +46,10 @@ export default function LiveInspection() {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
   const [lastTranscript, setLastTranscript] = useState("");
-  const [aiStatus, setAiStatus] = useState("idle"); // idle, listening, thinking, speaking
+  const [aiStatus, setAiStatus] = useState("idle"); // idle, listening, thinking, speaking, analyzing
+  const [visionEnabled, setVisionEnabled] = useState(false); // Auto vision analysis
+  const [lastVisionResult, setLastVisionResult] = useState("");
+  const visionIntervalRef = useRef(null);
 
   // Update time
   useEffect(() => {
