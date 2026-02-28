@@ -445,11 +445,7 @@ async def get_analytics():
 async def chat(request: ChatRequest):
     """Chat with AI assistant about inspection data"""
     try:
-        api_key = os.environ.get('EMERGENT_LLM_KEY')
-        if not api_key:
-            raise HTTPException(status_code=500, detail="LLM API key not configured")
-        
-        session_id = request.session_id or str(uuid.uuid4())
+        openai_client = get_openai_client()
         
         # System message with context about the inspector's data
         system_message = """You are Cat Inspect AI Assistant, an expert AI helper for Caterpillar equipment inspectors. 
@@ -478,29 +474,31 @@ For example, if asked about failure categories, include: {"chart_type": "bar", "
 
 Be concise, professional, and helpful. Focus on actionable insights."""
 
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=session_id,
-            system_message=system_message
-        ).with_model("openai", "gpt-5.2")
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": request.message}
+            ],
+            max_tokens=500
+        )
         
-        user_message = UserMessage(text=request.message)
-        response = await chat.send_message(user_message)
+        response_text = response.choices[0].message.content
         
         # Check if response contains chart data
         chart_data = None
-        if "chart_type" in response.lower() or '"data"' in response:
+        if "chart_type" in response_text.lower() or '"data"' in response_text:
             import json
             import re
             # Try to extract JSON from response
-            json_match = re.search(r'\{[^{}]*"chart_type"[^{}]*\}', response, re.DOTALL)
+            json_match = re.search(r'\{[^{}]*"chart_type"[^{}]*\}', response_text, re.DOTALL)
             if json_match:
                 try:
                     chart_data = json.loads(json_match.group())
                 except:
                     pass
         
-        return ChatResponse(response=response, chart_data=chart_data)
+        return ChatResponse(response=response_text, chart_data=chart_data)
         
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
