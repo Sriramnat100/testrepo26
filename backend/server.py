@@ -672,26 +672,6 @@ async def speech_to_text(request: STTRequest):
         logger.error(f"STT error: {str(e)}")
         return {"text": "", "success": False, "error": str(e)}
 
-# AI Vision Analysis Request
-class VisionAnalysisRequest(BaseModel):
-    image_base64: str
-    context: Optional[str] = "equipment inspection"
-
-class VisionAnalysisResponse(BaseModel):
-    analysis: str
-    findings: List[dict]
-    severity: str
-    should_alert: bool
-
-# Text to Speech Request
-class TTSRequest(BaseModel):
-    text: str
-    voice: Optional[str] = "alloy"
-
-# Speech to Text Request  
-class STTRequest(BaseModel):
-    audio_base64: str
-
 # Include the router in the main app
 app.include_router(api_router)
 
